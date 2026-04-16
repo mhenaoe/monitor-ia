@@ -12,10 +12,8 @@ export default auth((req) => {
     nextUrl.pathname.startsWith("/monitor");
   const isApiAuth = nextUrl.pathname.startsWith("/api/auth");
 
-  // Permitir rutas de API de auth siempre
   if (isApiAuth) return NextResponse.next();
 
-  // Si está logueado y va al login, redirigir al dashboard según su rol
   if (isLoggedIn && isAuthRoute) {
     const rol = req.auth?.user?.rol;
     if (rol === "DOCENTE") {
@@ -27,7 +25,6 @@ export default auth((req) => {
     return NextResponse.redirect(new URL("/", nextUrl));
   }
 
-  // Si NO está logueado y va al dashboard, redirigir al login
   if (!isLoggedIn && isDashboardRoute) {
     return NextResponse.redirect(new URL("/login", nextUrl));
   }

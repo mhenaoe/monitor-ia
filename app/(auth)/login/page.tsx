@@ -8,8 +8,6 @@ import { GraduationCap, LogIn, AlertCircle } from "lucide-react";
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // ── Desarrollo: login rápido con correo ──
   const [devCorreo, setDevCorreo] = useState("");
 
   const handleMicrosoftLogin = async () => {
@@ -34,16 +32,16 @@ export default function LoginPage() {
     if (result?.error) {
       setError("Usuario no encontrado. Verifica el correo.");
       setIsLoading(false);
+    } else {
+      window.location.href = "/";
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-violet-50 to-purple-50">
-      {/* Decorative background */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-violet-200 rounded-full opacity-30 blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-200 rounded-full opacity-30 blur-3xl" />
-      </div>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-violet-50 to-purple-50 relative overflow-hidden">
+      {/* Decorative background blobs */}
+      <div className="absolute -top-40 -right-40 w-80 h-80 bg-violet-200 rounded-full opacity-30 blur-3xl" />
+      <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-purple-200 rounded-full opacity-30 blur-3xl" />
 
       <div className="relative w-full max-w-md mx-4">
         {/* Card */}
@@ -112,13 +110,15 @@ export default function LoginPage() {
                 <div className="flex gap-2 mt-2">
                   <button
                     onClick={() => handleDevLogin("docente@udem.edu.co")}
-                    className="flex-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition"
+                    disabled={isLoading}
+                    className="flex-1 px-3 py-1.5 text-xs bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition disabled:opacity-50"
                   >
                     Docente
                   </button>
                   <button
                     onClick={() => handleDevLogin("estudiante@udem.edu.co")}
-                    className="flex-1 px-3 py-1.5 text-xs bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition"
+                    disabled={isLoading}
+                    className="flex-1 px-3 py-1.5 text-xs bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition disabled:opacity-50"
                   >
                     Estudiante
                   </button>
