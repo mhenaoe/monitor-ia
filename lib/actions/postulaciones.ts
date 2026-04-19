@@ -46,9 +46,18 @@ export async function postularseFase1(
     });
     if (!estudiante) return { error: "Perfil de estudiante no encontrado" };
 
-    const resultadoValidacion = validarCriteriosAutomaticos(
+    // Separar respuestas: preguntas abiertas (preguntasFase1) vs criterios manuales
+    const respuestasManuales: Record<string, string> = {};
+    for (const criterio of convocatoria.criterios) {
+      if (criterio.tipo === "MANUAL" && respuestas[criterio.campo]) {
+        respuestasManuales[criterio.campo] = respuestas[criterio.campo];
+      }
+    }
+
+    const resultadoValidacion = validarCriterios(
       convocatoria.criterios,
-      estudiante
+      estudiante,
+      respuestasManuales
     );
 
     // HU-17: Bloqueo por incumplimiento
@@ -104,8 +113,9 @@ export async function postularseFase1(
 // ─────────────────────────────────────────────
 // HU-16: Motor de validación automática
 // ─────────────────────────────────────────────
-function validarCriteriosAutomaticos(
+function validarCriterios(
   criterios: {
+    id: string;
     nombre: string;
     campo: string;
     operador: string;
@@ -116,45 +126,61 @@ function validarCriteriosAutomaticos(
     promedioAcumulado: number;
     semestre: number;
     creditosAprobados: number;
-  }
+  },
+  respuestasManuales: Record<string, string>
 ) {
   const criteriosFallidos: string[] = [];
 
   for (const criterio of criterios) {
-    // Solo evaluar criterios automáticos
-    if (criterio.tipo !== "AUTOMATICO_SIS") continue;
+    if (criterio.tipo === "AUTOMATICO_SIS") {
+      // ─── Automático: evalúa contra datos del SA ───
+      const valorEstudiante = getValorEstudiante(criterio.campo, estudiante);
+      if (valorEstudiante === null) continue;
 
-    const valorEstudiante = getValorEstudiante(criterio.campo, estudiante);
-    if (valorEstudiante === null) continue;
+      const valorCriterio = parseFloat(criterio.valor);
+      let cumple = false;
 
-    const valorCriterio = parseFloat(criterio.valor);
-    let cumple = false;
+      switch (criterio.operador) {
+        case ">=": cumple = valorEstudiante >= valorCriterio; break;
+        case "<=": cumple = valorEstudiante <= valorCriterio; break;
+        case "==": cumple = valorEstudiante === valorCriterio; break;
+        case "!=": cumple = valorEstudiante !== valorCriterio; break;
+        case ">": cumple = valorEstudiante > valorCriterio; break;
+        case "<": cumple = valorEstudiante < valorCriterio; break;
+      }
 
-    switch (criterio.operador) {
-      case ">=":
-        cumple = valorEstudiante >= valorCriterio;
-        break;
-      case "<=":
-        cumple = valorEstudiante <= valorCriterio;
-        break;
-      case "==":
-        cumple = valorEstudiante === valorCriterio;
-        break;
-      case "!=":
-        cumple = valorEstudiante !== valorCriterio;
-        break;
-      case ">":
-        cumple = valorEstudiante > valorCriterio;
-        break;
-      case "<":
-        cumple = valorEstudiante < valorCriterio;
-        break;
-    }
+      if (!cumple) {
+        criteriosFallidos.push(
+          `${criterio.nombre} (tu valor: ${valorEstudiante}, requerido: ${criterio.operador} ${criterio.valor})`
+        );
+      }
+    } else if (criterio.tipo === "MANUAL") {
+      // ─── Manual: evalúa contra respuesta del formulario ───
+      const respuestaEstudiante = respuestasManuales[criterio.campo]?.trim();
 
-    if (!cumple) {
-      criteriosFallidos.push(
-        `${criterio.nombre} (tu valor: ${valorEstudiante}, requerido: ${criterio.operador} ${criterio.valor})`
-      );
+      if (!respuestaEstudiante) {
+        criteriosFallidos.push(`${criterio.nombre} (no respondiste)`);
+        continue;
+      }
+
+      const valorEsperado = criterio.valor.trim();
+      let cumple = false;
+
+      // Comparación case-insensitive
+      switch (criterio.operador) {
+        case "==":
+          cumple = respuestaEstudiante.toLowerCase() === valorEsperado.toLowerCase();
+          break;
+        case "!=":
+          cumple = respuestaEstudiante.toLowerCase() !== valorEsperado.toLowerCase();
+          break;
+      }
+
+      if (!cumple) {
+        criteriosFallidos.push(
+          `${criterio.nombre} (respuesta esperada: ${valorEsperado})`
+        );
+      }
     }
   }
 
@@ -319,7 +345,7 @@ export async function obtenerConvocatoriasActivas() {
   });
   if (!estudiante) return [];
 
-  return db.convocatoria.findMany({
+  const convocatorias = await db.convocatoria.findMany({
     where: {
       estado: "PUBLICADA",
       curso: { programa: estudiante.programa },
@@ -328,10 +354,16 @@ export async function obtenerConvocatoriasActivas() {
     include: {
       curso: true,
       docente: { include: { usuario: true } },
-      _count: { select: { postulaciones: true } },
+      _count: { select: { postulaciones: true, criterios: true } },
+      postulaciones: {
+        where: { estudianteId: session.user.estudianteId },
+        select: { id: true, estado: true, faseActual: true },
+      },
     },
     orderBy: { fechaFin: "asc" },
   });
+
+  return convocatorias;
 }
 
 export async function obtenerMisPostulaciones() {
@@ -350,4 +382,43 @@ export async function obtenerMisPostulaciones() {
     },
     orderBy: { fechaPostulacion: "desc" },
   });
+}
+
+// ─────────────────────────────────────────────
+// Obtener detalle de convocatoria para estudiante
+// Con criterios + estado de postulación si existe
+// ─────────────────────────────────────────────
+export async function obtenerDetalleConvocatoria(convocatoriaId: string) {
+  const session = await auth();
+  if (!session || !session.user.estudianteId) return null;
+
+  const estudiante = await db.estudiante.findUnique({
+    where: { id: session.user.estudianteId },
+  });
+  if (!estudiante) return null;
+
+  const convocatoria = await db.convocatoria.findUnique({
+    where: { id: convocatoriaId },
+    include: {
+      curso: true,
+      docente: { include: { usuario: true } },
+      criterios: true,
+      postulaciones: {
+        where: { estudianteId: session.user.estudianteId },
+        select: {
+          id: true,
+          estado: true,
+          faseActual: true,
+          fechaPostulacion: true,
+        },
+      },
+    },
+  });
+
+  if (!convocatoria) return null;
+
+  // Validar que pertenece al programa del estudiante
+  if (convocatoria.curso.programa !== estudiante.programa) return null;
+
+  return convocatoria;
 }
