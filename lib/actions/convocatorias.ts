@@ -259,3 +259,45 @@ export async function obtenerConvocatoria(id: string) {
     },
   });
 }
+
+// ─────────────────────────────────────────────
+// Obtener convocatorias editables (BORRADOR) del docente
+// Usado en /docente/criterios para el selector
+// ─────────────────────────────────────────────
+export async function obtenerBorradoresDelDocente() {
+  const session = await auth();
+  if (!session || !session.user.docenteId) return [];
+
+  return db.convocatoria.findMany({
+    where: {
+      docenteId: session.user.docenteId,
+      estado: "BORRADOR",
+    },
+    include: {
+      curso: true,
+      _count: { select: { criterios: true } },
+    },
+    orderBy: { creadoEn: "desc" },
+  });
+}
+
+// ─────────────────────────────────────────────
+// Obtener convocatorias publicadas/cerradas del docente
+// Usado en /docente/revision para el selector
+// ─────────────────────────────────────────────
+export async function obtenerConvocatoriasConCandidatos() {
+  const session = await auth();
+  if (!session || !session.user.docenteId) return [];
+
+  return db.convocatoria.findMany({
+    where: {
+      docenteId: session.user.docenteId,
+      estado: { in: ["PUBLICADA", "CERRADA"] },
+    },
+    include: {
+      curso: true,
+      _count: { select: { postulaciones: true } },
+    },
+    orderBy: { creadoEn: "desc" },
+  });
+}

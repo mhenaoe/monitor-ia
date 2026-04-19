@@ -60,59 +60,61 @@ export function Paso1Datos({ cursos }: Props) {
 
   // ─── Validación del cliente ───
   const validar = (): string | null => {
-    if (!cursoId) return "Debes seleccionar un curso";
-    if (!fechaInicio) return "Debes indicar la fecha de inicio";
-    if (!fechaFin) return "Debes indicar la fecha de cierre";
-    if (new Date(fechaInicio) >= new Date(fechaFin)) {
-      return "La fecha de inicio debe ser anterior a la de cierre";
-    }
-    if (new Date(fechaFin) <= new Date()) {
-      return "La fecha de cierre debe ser futura";
-    }
-    // Las preguntas son opcionales, pero si existen deben tener texto
-    const preguntasConTexto = preguntas.filter((p) => p.texto.trim() !== "");
-    if (
-      preguntas.some((p) => p.texto.trim() === "") &&
-      preguntasConTexto.length !== preguntas.length
-    ) {
-      return "Completa las preguntas vacías o elimínalas";
-    }
-    return null;
-  };
+  if (!cursoId) return "Debes seleccionar un curso";
+  if (!fechaInicio) return "Debes indicar la fecha de inicio";
+  if (!fechaFin) return "Debes indicar la fecha de cierre";
+  if (new Date(fechaInicio) >= new Date(fechaFin))
+    return "La fecha de inicio debe ser anterior a la de cierre";
+  if (new Date(fechaFin) <= new Date())
+    return "La fecha de cierre debe ser futura";
+  // Mínimo 1 pregunta con texto (alineado con el schema Zod)
+  const conTexto = preguntas.filter((p) => p.texto.trim().length >= 5);
+  if (conTexto.length === 0)
+    return "Agrega al menos una pregunta (mínimo 5 caracteres)";
+  if (preguntas.some((p) => p.texto.trim().length > 0 && p.texto.trim().length < 5))
+    return "Cada pregunta debe tener al menos 5 caracteres";
+  return null;
+};
 
   // ─── Submit ───
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const errorValidacion = validar();
-    if (errorValidacion) {
-      setError(errorValidacion);
+  e.preventDefault();
+  const errorValidacion = validar();
+  if (errorValidacion) {
+    setError(errorValidacion);
+    return;
+  }
+  setError(null);
+
+  const preguntasFinales = preguntas
+    .filter((p) => p.texto.trim() !== "")
+    .map((p) => ({ pregunta: p.texto.trim(), tipo: "texto" as const }));
+
+  // Bug 2: validar mínimo 1 pregunta con texto
+  if (preguntasFinales.length === 0) {
+    setError("Agrega al menos una pregunta para los postulantes");
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("cursoId", cursoId);
+  formData.append("fechaInicio", fechaInicio);
+  formData.append("fechaFin", fechaFin);
+  formData.append("preguntasFase1", JSON.stringify(preguntasFinales));
+
+  startTransition(async () => {
+    const res = await crearConvocatoria(formData);
+    if (res?.error) {
+      setError(
+        typeof res.error === "string" ? res.error : "Error al crear la convocatoria"
+      );
       return;
     }
-    setError(null);
-
-    // Preparar preguntas como JSON para el Server Action
-    const preguntasFinales = preguntas
-      .filter((p) => p.texto.trim() !== "")
-      .map((p) => ({ pregunta: p.texto.trim(), tipo: "abierta" }));
-
-    const formData = new FormData();
-    formData.append("cursoId", cursoId);
-    formData.append("fechaInicio", fechaInicio);
-    formData.append("fechaFin", fechaFin);
-    formData.append("preguntasFase1", JSON.stringify(preguntasFinales));
-
-    startTransition(async () => {
-      const res = await crearConvocatoria(formData);
-      if (res?.error) {
-        setError(res.error);
-        return;
-      }
-      if (res?.success && res.id) {
-        // Avanzar al paso 2 con el ID de la convocatoria recién creada
-        router.push(`/docente/convocatorias/nueva?step=2&id=${res.id}`);
-      }
-    });
-  };
+    if (res?.success && res.id) {
+      router.push(`/docente/convocatorias/nueva?step=2&id=${res.id}`);
+    }
+  });
+};
 
   // Fecha mínima: hoy (para el input date)
   const hoy = new Date().toISOString().split("T")[0];
