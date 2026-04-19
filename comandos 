@@ -1,0 +1,2 @@
+npm run db:seed #insertar datos en base de datos
+npm run dev #correr el servidor
